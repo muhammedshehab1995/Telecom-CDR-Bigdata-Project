@@ -12,7 +12,7 @@ An end-to-end, containerized **batch + streaming + cloud** pipeline for CDR proc
 ## 🔍 Overview
 
 - **Real CDR Data**: Ingest FTTH / ADSL / 4G-LTE voice & data logs → EDA → Hive tables → transformations → BI dashboards
-- **Safe-by-Design CDRs**: Realistic generator with Egyptian governorates and operators (Vodafone Egypt, Orange Egypt, Etisalat Egypt, WE Telecom)
+- **Safe-by-Design CDRs**: Realistic generator with Local Operators
 - **PII-Anonymized**: SHA-256 hashing of all customer identifiers
 - **Star Schema**: One `customer` dimension + usage & billing fact tables
 - **AWS S3 Data Lake**: Three-zone lake (`raw` / `clean` / `analytics`) provisioned via Terraform with versioning and AES-256 encryption
