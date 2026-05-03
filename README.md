@@ -2,7 +2,7 @@
 
 # CDR Telecom Big Data Platform — Data Engineering Zoomcamp Project
 
-Data Engineering Project · Telecom CDR Platform · 2026
+Data Engineering Project · Telecom CDR Platform · 2025
 **GitHub: [muhammedshehab1995](https://github.com/muhammedshehab1995/Telecom-CDR-Bigdata-Project)**
 
 An end-to-end, containerized **batch + streaming + cloud** pipeline for CDR processing and analysis, built with Docker Compose, HDFS, JupyterLab, Hive, Spark, Kafka, Flink, Superset, Grafana, Prometheus, AlertManager, and **AWS S3 as the cloud data lake (Terraform)**.
@@ -152,8 +152,8 @@ Before starting, make sure you have installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/muhammedshehab1995/cdr-telecom-bigdata-platform.git
-cd cdr-telecom-bigdata-platform
+git clone https://github.com/muhammedshehab1995/Telecom-CDR-Bigdata-Project.git
+cd Telecom-CDR-Bigdata-Project
 ```
 
 ---
@@ -336,7 +336,7 @@ You should see output like:
 
 ```
 [INFO] CDR_STREAM_GEN: Connected to Kafka brokers: broker1:29092, broker2:29093, broker3:29094
-[INFO] CDR_STREAM_GEN: Producing CDR events for 30,000 Egyptian subscribers...
+[INFO] CDR_STREAM_GEN: Producing CDR events for 30,000 subscribers...
 [INFO] CDR_STREAM_GEN: 1000 events sent | Throughput: 487 events/sec
 ```
 
