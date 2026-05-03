@@ -193,7 +193,7 @@ aws s3 ls s3://cdr-telecom-data-lake-dev/
 ```bash
 cd scripts/setup
 
-# Generate synthetic Egyptian CDR data
+# Generate synthetic CDR data
 bash generate_data.sh
 
 # Enrich with governorate, operator, and network metadata
@@ -313,7 +313,7 @@ Verify Kafka brokers are up by opening Kafka-UI at **http://localhost:8085** —
 
 ### 7. Start the CDR Kafka Producer
 
-Open a new terminal and start the live CDR event generator. It produces realistic Egyptian CDR events and publishes them to Kafka topics in real time.
+Open a new terminal and start the live CDR event generator. It produces realistic ian CDR events and publishes them to Kafka topics in real time.
 
 ```bash
 cd streaming/kafka/producer
@@ -504,4 +504,4 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
-*CDR Telecom Big Data Platform · Egypt · [muhammedshehab1995](https://github.com/muhammedshehab1995) · 2025*
+*CDR Telecom Big Data Platform ·  · [muhammedshehab1995](https://github.com/muhammedshehab1995) · 2025*
