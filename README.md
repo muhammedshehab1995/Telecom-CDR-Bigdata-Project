@@ -1,6 +1,6 @@
 ![Project Banner](assets/github-header-image.png)
 
-# CDR Telecom Big Data Platform — Egypt
+# CDR Telecom Big Data Platform — Data Engineering Zoomcamp Project
 
 **Data Engineering Project · Egypt Telecom CDR Platform · 2026
 **GitHub: [muhammedshehab1995](https://github.com/muhammedshehab1995/Telecom-CDR-Bigdata-Project)**
