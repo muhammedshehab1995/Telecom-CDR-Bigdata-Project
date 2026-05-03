@@ -100,8 +100,8 @@ cdr-telecom-bigdata-platform/
 │ │ └── cdr_flink_job.py
 │ ├── kafka /
 │ │ ├── producer /
-│ │ │ ├── cdr_stream_gen.py          # Live Egyptian CDR event generator
-│ │ │ └── streaming_config.json      # Egyptian operators & governorates config
+│ │ │ ├── cdr_stream_gen.py          # Live CDR event generator
+│ │ │ └── streaming_config.json      
 │ │ └── consumer /
 │ │ │ └── example_consumer.py
 │ └── monitoring /
