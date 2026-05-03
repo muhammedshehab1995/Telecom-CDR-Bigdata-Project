@@ -2,7 +2,7 @@
 
 # CDR Telecom Big Data Platform — Data Engineering Zoomcamp Project
 
-**Data Engineering Project · Egypt Telecom CDR Platform · 2026
+Data Engineering Project · Telecom CDR Platform · 2026
 **GitHub: [muhammedshehab1995](https://github.com/muhammedshehab1995/Telecom-CDR-Bigdata-Project)**
 
 An end-to-end, containerized **batch + streaming + cloud** pipeline for CDR processing and analysis, built with Docker Compose, HDFS, JupyterLab, Hive, Spark, Kafka, Flink, Superset, Grafana, Prometheus, AlertManager, and **AWS S3 as the cloud data lake (Terraform)**.
