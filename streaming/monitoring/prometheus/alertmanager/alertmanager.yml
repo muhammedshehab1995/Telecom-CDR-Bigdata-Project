@@ -2,7 +2,7 @@ global:
   smtp_smarthost: 'smtp.gmail.com:587'
   smtp_from: 'at.critical.bigdata@gmail.com'
   smtp_auth_username: 'at.critical.bigdata@gmail.com'
-  smtp_auth_password: '***REMOVED***'
+  smtp_auth_password: '${SMTP_PASSWORD}'
   smtp_require_tls: true
   resolve_timeout: 5m
 
@@ -27,7 +27,7 @@ receivers:
 
   - name: 'critical-team'
     slack_configs:
-      - api_url: '***REMOVED***'
+      - api_url: '${SLACK_WEBHOOK_URL}'
         channel: '#alerts'
         send_resolved: true
 
