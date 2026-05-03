@@ -11,14 +11,7 @@ An end-to-end, containerized **batch + streaming + cloud** pipeline for CDR proc
 
 ## 🔍 Overview
 
-- **Real CDR Data**: Ingest FTTH / ADSL / 4G-LTE voice & data logs → EDA → Hive tables → transformations → BI dashboards
-- **Safe-by-Design CDRs**: Realistic generator with Local Operators
-- **PII-Anonymized**: SHA-256 hashing of all customer identifiers
-- **Star Schema**: One `customer` dimension + usage & billing fact tables
-- **AWS S3 Data Lake**: Three-zone lake (`raw` / `clean` / `analytics`) provisioned via Terraform with versioning and AES-256 encryption
-- **Streaming Pipeline**: Zookeeper → 3× Kafka Brokers → Kafka-UI → Flink → Prometheus / Grafana → Postgres sink
-- **Batch Pipeline**: HDFS → Spark → Hive → JupyterLab notebooks → Superset dashboards
-- **Monitoring**: Prometheus + Grafana with 7 pre-built dashboards + AlertManager
+This platform implements an end-to-end telecom data engineering pipeline designed for **continuous monitoring of Call Detail Records (CDRs) to support network optimization, performance tuning, and operational decision-making**. It ingests and processes realistic FTTH, ADSL, and 4G-LTE CDRs covering both voice and data sessions, flowing from raw ingestion through exploratory data analysis (EDA), Hive-based schema modeling, feature engineering, and finally into BI-ready datasets for analytics and visualization. It includes a configurable synthetic data generator that produces high-volume, production-like telecom events with attributes such as subscriber behavior, network usage, latency, and geographic distribution, enabling reproducibility while simulating real-world workloads. All sensitive customer identifiers are securely anonymized using SHA-256 hashing to enforce privacy and enable safe data sharing. The analytical layer is designed using a star schema with a central customer dimension and multiple fact tables for usage and billing, enabling efficient OLAP queries and reporting. A cloud-native AWS S3 data lake is provisioned using Terraform with a three-zone architecture (raw, clean, analytics), incorporating versioning, AES-256 encryption, and strict IAM-based access control. The real-time streaming pipeline leverages Zookeeper and a three-broker Kafka cluster for high-throughput ingestion, with Apache Flink handling stream processing, enrichment, and anomaly detection before sinking results into PostgreSQL for real-time consumption, while Kafka-UI provides operational visibility. In parallel, a scalable batch pipeline built on HDFS, Apache Spark, and Apache Hive performs large-scale transformations and aggregations, supported by JupyterLab for development and Superset or Power BI for dashboarding. The entire system is monitored using Prometheus and Grafana with multiple pre-built dashboards, while AlertManager enables proactive alerting for issues such as Kafka lag, anomaly spikes, network degradation, or pipeline failures, ensuring high reliability, deep visibility, and actionable insights for optimizing telecom network performance and improving service quality.
 
 ---
 
