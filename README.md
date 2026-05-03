@@ -1,4 +1,4 @@
-![Project Banner](assets/github-header-image.png)
+![Project Banner](assets/CDR-full-form-1.jpg)
 
 # CDR Telecom Big Data Platform — Data Engineering Zoomcamp Project
 
