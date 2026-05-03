@@ -1,0 +1,62 @@
+{
+  "subscriber_pool_size": 30000,
+  "egyptian_governorates": [
+    "Cairo", "Giza", "Alexandria", "Dakahlia", "Red Sea", "Beheira", "Fayoum",
+    "Gharbia", "Ismailia", "Menofia", "Minya", "Qalyubia", "New Valley", "Sharqia",
+    "Suez", "Aswan", "Assiut", "Beni Suef", "Port Said", "Damietta",
+    "Sharkia", "South Sinai", "Kafr el-Sheikh", "Matrouh", "Luxor",
+    "Qena", "North Sinai", "Sohag"
+  ],
+  "operators": [
+    {"name": "Vodafone Egypt", "mnc": "02", "market_share": 0.38, "prefixes": ["010", "0100", "0101", "0102"]},
+    {"name": "Orange Egypt", "mnc": "01", "market_share": 0.32, "prefixes": ["012", "0122", "0128", "0127"]},
+    {"name": "Etisalat Egypt", "mnc": "03", "market_share": 0.20, "prefixes": ["011", "0114", "0111", "0115"]},
+    {"name": "WE Telecom", "mnc": "04", "market_share": 0.10, "prefixes": ["015", "0155", "0150", "0156"]}
+  ],
+  "segments": ["Premium", "Standard", "Youth", "Basic"],
+  "app_categories": ["social", "video", "business", "gaming", "news", "shopping", "mixed"],
+  "popular_apps": [
+    {"name": "WhatsApp", "category": "social", "prob": 0.25},
+    {"name": "Facebook", "category": "social", "prob": 0.20},
+    {"name": "YouTube", "category": "video", "prob": 0.18},
+    {"name": "Instagram", "category": "social", "prob": 0.10},
+    {"name": "TikTok", "category": "video", "prob": 0.07},
+    {"name": "Snapchat", "category": "social", "prob": 0.05},
+    {"name": "Zoom", "category": "business", "prob": 0.05},
+    {"name": "Teams", "category": "business", "prob": 0.03},
+    {"name": "PUBG", "category": "gaming", "prob": 0.03},
+    {"name": "Netflix", "category": "video", "prob": 0.04}
+  ],
+  "activity_patterns": {
+    "morning_heavy": 0.10,
+    "evening_heavy": 0.25,
+    "night_owl": 0.10,
+    "business_hours": 0.18,
+    "weekend_warrior": 0.15,
+    "balanced": 0.22
+  },
+  "subscriber_segments": {
+    "Premium": 0.1,
+    "Standard": 0.5,
+    "Youth": 0.25,
+    "Basic": 0.15
+  },
+  "network_technologies": {
+    "5G": 0.08,
+    "4G": 0.65,
+    "3G": 0.21,
+    "2G": 0.06
+  },
+  "international_prefixes": [
+    { "prefix": "+20", "country": "Egypt", "weight": 0.55 },
+    { "prefix": "+966", "country": "Saudi Arabia", "weight": 0.12 },
+    { "prefix": "+971", "country": "UAE", "weight": 0.10 },
+    { "prefix": "+44", "country": "UK", "weight": 0.08 },
+    { "prefix": "+49", "country": "Germany", "weight": 0.05 },
+    { "prefix": "+1", "country": "USA/Canada", "weight": 0.10 }
+  ],
+  "data_profiles": ["video_streaming", "social_media_heavy", "gaming", "business_apps", "mixed"],
+  "rate_plans": ["Data_20", "Data_50", "Data_100", "Super_50", "Super_100", "Super_Maxi", "Basic_15", "Basic_35", "Basic_55"],
+  "session_type_distribution": [0.2, 0.5, 0.15, 0.1, 0.05],
+  "prob_roaming": 0.04
+}
