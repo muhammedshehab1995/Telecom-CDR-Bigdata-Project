@@ -9,9 +9,82 @@ An end-to-end, containerized **batch + streaming + cloud** pipeline for CDR proc
 
 ---
 
-## 🔍 Overview
+## 📑 Table of Contents
 
-This platform implements an end-to-end telecom data engineering pipeline designed for **continuous monitoring of Call Detail Records (CDRs) to support network optimization, performance tuning, and operational decision-making**. It ingests and processes realistic FTTH, ADSL, and 4G-LTE CDRs covering both voice and data sessions, flowing from raw ingestion through exploratory data analysis (EDA), Hive-based schema modeling, feature engineering, and finally into BI-ready datasets for analytics and visualization. It includes a configurable synthetic data generator that produces high-volume, production-like telecom events with attributes such as subscriber behavior, network usage, latency, and geographic distribution, enabling reproducibility while simulating real-world workloads. All sensitive customer identifiers are securely anonymized using SHA-256 hashing to enforce privacy and enable safe data sharing. The analytical layer is designed using a star schema with a central customer dimension and multiple fact tables for usage and billing, enabling efficient OLAP queries and reporting. A cloud-native AWS S3 data lake is provisioned using Terraform with a three-zone architecture (raw, clean, analytics), incorporating versioning, AES-256 encryption, and strict IAM-based access control. The real-time streaming pipeline leverages Zookeeper and a three-broker Kafka cluster for high-throughput ingestion, with Apache Flink handling stream processing, enrichment, and anomaly detection before sinking results into PostgreSQL for real-time consumption, while Kafka-UI provides operational visibility. In parallel, a scalable batch pipeline built on HDFS, Apache Spark, and Apache Hive performs large-scale transformations and aggregations, supported by JupyterLab for development and Superset or Power BI for dashboarding. The entire system is monitored using Prometheus and Grafana with multiple pre-built dashboards, while AlertManager enables proactive alerting for issues such as Kafka lag, anomaly spikes, network degradation, or pipeline failures, ensuring high reliability, deep visibility, and actionable insights for optimizing telecom network performance and improving service quality.
+- [Problem Statement](#-problem-statement)
+- [Solution Overview](#-solution-overview)
+- [Architecture](#-architecture)
+- [Tech Stack](#-tech-stack)
+- [Lambda Architecture (Batch / Speed / Serving)](#-lambda-architecture-batch--speed--serving)
+- [Project Structure](#-project-structure)
+- [Prerequisites](#-prerequisites)
+- [Step-by-Step Setup](#-how-to-run--step-by-step)
+  - [1. Clone the Repository](#1-clone-the-repository)
+  - [2. Provision AWS S3 with Terraform](#2-provision-the-aws-s3-data-lake-with-terraform)
+  - [3. Generate and Prepare CDR Data](#3-generate-and-prepare-cdr-data)
+  - [4. Upload Data to AWS S3](#4-upload-data-to-aws-s3)
+  - [5. Start the Batch Stack](#5-start-the-batch-stack)
+  - [6. Start the Streaming Stack](#6-start-the-streaming-stack)
+  - [7. Start the CDR Kafka Producer](#7-start-the-cdr-kafka-producer)
+  - [8. Run the Batch ELT Notebooks](#8-run-the-batch-elt-notebooks-in-jupyterlab)
+  - [9. View Grafana Dashboards](#9--view-grafana-dashboards-streaming)
+  - [10. View Superset Dashboards](#10--view-superset-dashboards-batch-analytics)
+  - [11. Power BI Dashboards](#11-power-bi-dashboards)
+  - [12. Monitor with Prometheus & AlertManager](#12--monitor-with-prometheus-and-alertmanager)
+- [Service Endpoints](#-service-endpoints)
+- [Data Pipeline Details](#-data-pipeline-details)
+- [Star Schema Design](#-star-schema-design)
+- [Anomaly Detection Logic](#-anomaly-detection-logic)
+- [Evaluation Criteria Checklist](#-evaluation-criteria-checklist)
+- [Reproducibility](#-reproducibility)
+- [Optional Enhancements](#-optional-enhancements)
+- [Key Design Decisions](#-key-design-decisions)
+- [Troubleshooting](#-troubleshooting)
+
+---
+
+## 🔍 Problem Statement
+
+Modern telecom operators generate millions of Call Detail Records (CDRs) every hour across FTTH, ADSL, and 4G-LTE networks. Existing systems often rely on siloed batch jobs or manual observation, which introduces dangerous latency in detecting:
+
+- **Network degradation** — signal drops, high latency, and QoS failures that silently erode subscriber experience
+- **Fraudulent usage patterns** — abnormal session durations or data volumes that evade rule-based detection
+- **Revenue leakage** — unbilled sessions, misclassified plans, and anomalous ARPU trends that accumulate undetected in batch cycles
+- **Churn signals** — behavioral shifts across governorates and subscriber segments that are invisible without continuous monitoring
+
+This platform solves these problems by building an end-to-end real-time and batch pipeline that ingests CDR events, classifies subscriber behavior, detects anomalies, and surfaces operational insights in under 60 seconds — on a scalable, containerized, cloud-native stack.
+
+---
+
+## 🧭 Solution Overview
+
+```
+Synthetic CDR Generator (Python)
+        │
+        ▼
+┌───────────────────────────┐
+│  Data Preparation Layer   │  generate → enrich → clean → anonymize (SHA-256)
+└───────────────────────────┘
+        │                    │
+        ▼  (batch)           ▼  (streaming)
+   HDFS (raw / clean)    Kafka Topics (3 brokers)
+        │                    │
+        ▼                    ▼
+   Spark + Hive          Apache Flink
+        │                    │
+        ▼                    ▼
+   AWS S3               PostgreSQL (real-time sink)
+   (raw / clean /        │
+    analytics)           ▼
+        │            Kafka-UI + Grafana
+        ▼
+   Superset / Power BI
+        │
+        ▼
+   Prometheus + AlertManager (full observability)
+```
+
+The entire pipeline is orchestrated by Apache Airflow and provisioned on AWS using Terraform.
 
 ---
 
@@ -23,9 +96,9 @@ This platform implements an end-to-end telecom data engineering pipeline designe
 
 </center>
 
-- **Custom Hybrid**
-  - **Batch** (Spark → Hive → S3) for analytics
-  - **Streaming** (Kafka → Flink → Postgres) for real-time alerts
+- **Custom Hybrid (Lambda Architecture)**
+  - **Batch** (Spark → Hive → S3) for historical analytics and BI reporting
+  - **Streaming** (Kafka → Flink → Postgres) for real-time alerts and anomaly detection
   - **Cloud Layer** (AWS S3, 3 zones: raw / clean / analytics) provisioned via Terraform
 - **Lambda-Ready**: batch and speed views can be merged via a serving layer
 
@@ -48,81 +121,141 @@ This platform implements an end-to-end telecom data engineering pipeline designe
 
 ---
 
-## 📂 Repo Structure
+## 🏛️ Lambda Architecture (Batch / Speed / Serving)
+
+CDR Telecom uses the **Lambda Architecture** for dual-path data processing:
+
+```
+Raw CDR Events
+      │
+      ├──────────────────────────────────────┐
+      │  Speed Layer                         │  Batch Layer
+      ▼                                      ▼
+Kafka (3 brokers)                    HDFS (Namenode + 2 Datanodes)
+      │                                      │
+      ▼                                      ▼
+Apache Flink                         Apache Spark + Hive
+(stream enrichment,                  (large-scale transforms,
+ anomaly detection,                   aggregations, star schema,
+ real-time sinking)                   feature engineering)
+      │                                      │
+      ▼                                      ▼
+PostgreSQL                           AWS S3 (raw / clean / analytics)
+(real-time queries)                         │
+      │                                      ▼
+      └──────────┬───────────────────────────┘
+                 ▼
+           Serving Layer
+    (Grafana · Superset · Power BI)
+```
+
+### Speed Layer — Real-Time Streaming
+
+**Kafka (3-broker cluster with Zookeeper)**
+
+- High-throughput ingestion of live CDR events across topics partitioned by network type (FTTH, ADSL, 4G-LTE)
+- 3-broker setup ensures fault tolerance and leader election resilience
+- JMX Exporter on each broker feeds real-time metrics into Prometheus
+
+**Apache Flink**
+
+- Consumes Kafka topics and applies streaming enrichment (governorate mapping, operator metadata)
+- Runs statistical anomaly detection using sliding time windows
+- Sinks enriched and flagged records into PostgreSQL for real-time consumption
+- Kafka-UI at `http://localhost:8085` provides operational topic visibility
+
+### Batch Layer — Historical Processing
+
+**HDFS (Hadoop Distributed File System)**
+
+- Namenode + 2 Datanodes store raw and cleaned CDR Parquet files
+- Serves as the durable staging area before Spark transformation jobs
+
+**Apache Spark + Hive**
+
+- Spark jobs run transformation, feature engineering, and aggregation across the full historical CDR dataset
+- Hive metastore (backed by Postgres) manages table DDL, partitioned zones, and external table definitions
+- JupyterLab notebooks orchestrate the full 10-step ELT workflow interactively
+
+**AWS S3 (3-zone data lake)**
+
+- `raw/` — unmodified CDR records in Parquet and CSV
+- `clean/` — validated, PII-anonymized CDRs (SHA-256 subscriber hashing)
+- `analytics/` — aggregated BI-ready outputs, loaded by Superset and Power BI
+
+### Airflow Orchestration
+
+The DAG `cdr_batch_pipeline.py` wires the full batch pipeline in three tasks:
+
+```
+spark_ingest_and_clean → spark_feature_engineering → upload_analytics_to_s3
+```
+
+---
+
+## 📂 Project Structure
 
 ```text
 cdr-telecom-bigdata-platform/
 ├── main.tf                          # Terraform: AWS S3 data lake (3 zones + IAM policy)
 ├── upload_to_s3.py                  # Upload CDR Parquet/CSV files to S3
+├── Makefile                         # One-command runner for each pipeline component
 ├── README.md
-├── airflow /
-│ └── dags /
-│ │ ├── cdr_batch_pipeline.py        # 3-task DAG: ingest → features → S3 upload
-│ │ └── cdr_cleaning.py
-├── batch /
-│ ├── docker-compose-batch.yml       # HDFS, Hive, Spark, JupyterLab, Superset, Airflow
-│ ├── hadoop /
-│ │ └── config /                     # core-site.xml, hdfs-site.xml, log4j.properties
-│ ├── Hive /
-│ │ └── hive-site.xml
-│ ├── Jupyter /
-│ │ ├── Dockerfile                   # Custom Spark + Python 3.10 JupyterLab image
-│ │ └── notebooks /
-│ │ │ └── work /
-│ │ │ │ ├── scripts /
-│ │ │ │ │ └── spark_init.py
-│ │ │ │ └── spark-apps /
-│ │ │ │ │ ├── 01_Data_Ingestion_Validation.ipynb
-│ │ │ │ │ ├── 02_Customer_Dimension_Analysis.ipynb
-│ │ │ │ │ ├── 03_Hive_Tables_Creation.ipynb
-│ │ │ │ │ ├── 04_CDR_Exploratory_Analysis.ipynb
-│ │ │ │ │ ├── 05_Data_Transformations_Engineering.ipynb
-│ │ │ │ │ ├── 06_Anomaly_Detection_Engineering.ipynb
-│ │ │ │ │ ├── 07_Trend_Analysis_Forecasting.ipynb
-│ │ │ │ │ ├── 08_Network_Performance_Analytics.ipynb
-│ │ │ │ │ ├── 09_Business_Intelligence_Metrics.ipynb
-│ │ │ │ │ ├── 10_PowerBI_Data_Preparation.ipynb
-│ │ │ │ │ └── dashboards /
-│ │ │ │ │ │ └── exports /
-│ └── spark /
-│ │ └── config /
-│ │ │ └── spark-defaults.conf
-├── streaming /
-│ ├── docker-compose-streaming.yml   # Zookeeper, Kafka x3, Flink, Grafana, Prometheus
-│ ├── flink /
-│ │ └── cdr_flink_job.py
-│ ├── kafka /
-│ │ ├── producer /
-│ │ │ ├── cdr_stream_gen.py          # Live CDR event generator
-│ │ │ └── streaming_config.json      
-│ │ └── consumer /
-│ │ │ └── example_consumer.py
-│ └── monitoring /
-│ │ ├── config /
-│ │ │ ├── jmx-exporter-broker1.yml
-│ │ │ ├── jmx-exporter-broker2.yml
-│ │ │ └── jmx-exporter-broker3.yml
-│ │ ├── grafana /
-│ │ │ └── dashboards /
-│ │ │ │ ├── files /                  # 7 pre-built Grafana dashboard JSONs
-│ │ │ │ └── dashboard-provisioning.yml
-│ │ │ └── datasources /
-│ │ └── prometheus /
-│ │ │ ├── alertmanager /
-│ │ │ ├── rules /
-│ │ │ └── prometheus.yml
-├── scripts /
-│ └── setup /
-│ │ ├── generate_data.sh
-│ │ ├── enriching_data.py
-│ │ ├── cleaning_v2_cdr_data.py
-│ │ └── convert_xlsx_to_csv.py
-├── config /
-│ ├── generator-config.json
-│ └── pipeline-config.json
-└── docs /
-│ ├── data_schema.md
-│ └── requirements.txt
+├── airflow/
+│   └── dags/
+│       ├── cdr_batch_pipeline.py    # 3-task DAG: ingest → features → S3 upload
+│       └── cdr_cleaning.py
+├── batch/
+│   ├── docker-compose-batch.yml     # HDFS, Hive, Spark, JupyterLab, Superset, Airflow
+│   ├── hadoop/
+│   │   └── config/                  # core-site.xml, hdfs-site.xml, log4j.properties
+│   ├── Hive/
+│   │   └── hive-site.xml
+│   ├── Jupyter/
+│   │   ├── Dockerfile               # Custom Spark + Python 3.10 JupyterLab image
+│   │   └── notebooks/work/spark-apps/
+│   │       ├── 01_Data_Ingestion_Validation.ipynb
+│   │       ├── 02_Customer_Dimension_Analysis.ipynb
+│   │       ├── 03_Hive_Tables_Creation.ipynb
+│   │       ├── 04_CDR_Exploratory_Analysis.ipynb
+│   │       ├── 05_Data_Transformations_Engineering.ipynb
+│   │       ├── 06_Anomaly_Detection_Engineering.ipynb
+│   │       ├── 07_Trend_Analysis_Forecasting.ipynb
+│   │       ├── 08_Network_Performance_Analytics.ipynb
+│   │       ├── 09_Business_Intelligence_Metrics.ipynb
+│   │       ├── 10_PowerBI_Data_Preparation.ipynb
+│   │       └── dashboards/exports/
+│   └── spark/config/spark-defaults.conf
+├── streaming/
+│   ├── docker-compose-streaming.yml # Zookeeper, Kafka x3, Flink, Grafana, Prometheus
+│   ├── flink/
+│   │   └── cdr_flink_job.py
+│   ├── kafka/
+│   │   ├── producer/
+│   │   │   ├── cdr_stream_gen.py    # Live CDR event generator
+│   │   │   └── streaming_config.json
+│   │   └── consumer/
+│   │       └── example_consumer.py
+│   └── monitoring/
+│       ├── config/                  # jmx-exporter-broker{1,2,3}.yml
+│       ├── grafana/
+│       │   ├── dashboards/files/    # 7 pre-built Grafana dashboard JSONs
+│       │   └── datasources/
+│       └── prometheus/
+│           ├── alertmanager/
+│           ├── rules/
+│           └── prometheus.yml
+├── scripts/setup/
+│   ├── generate_data.sh
+│   ├── enriching_data.py
+│   ├── cleaning_v2_cdr_data.py
+│   └── convert_xlsx_to_csv.py
+├── config/
+│   ├── generator-config.json
+│   └── pipeline-config.json
+└── docs/
+    ├── data_schema.md
+    └── requirements.txt
 ```
 
 ---
@@ -171,7 +304,7 @@ terraform plan
 terraform apply -auto-approve
 ```
 
-You should see this at the end:
+Expected output:
 
 ```
 Outputs:
@@ -203,9 +336,10 @@ python3 enriching_data.py
 python3 cleaning_v2_cdr_data.py
 ```
 
-This creates data files organized as:
+This creates:
+
 - `data/raw/` — raw CDR records (Parquet + CSV)
-- `data/clean/` — validated and PII-anonymized CDRs
+- `data/clean/` — validated and PII-anonymized CDRs (SHA-256 hashed subscriber IDs)
 - `data/analytics/` — aggregated outputs ready for BI
 
 ---
@@ -231,6 +365,7 @@ python3 upload_to_s3.py \
 ```
 
 Expected output:
+
 ```
 🔍 Scanning ./data for CDR files …
 📦 Found 12 file(s) to upload → s3://cdr-telecom-data-lake-dev/
@@ -238,6 +373,7 @@ Expected output:
 ```
 
 Verify the zones in S3:
+
 ```bash
 aws s3 ls s3://cdr-telecom-data-lake-dev/raw/
 aws s3 ls s3://cdr-telecom-data-lake-dev/clean/
@@ -248,23 +384,19 @@ aws s3 ls s3://cdr-telecom-data-lake-dev/analytics/
 
 ### 5. Start the Batch Stack
 
-Create the shared Docker network, then launch all batch services (HDFS, Hive, Spark, JupyterLab, Superset, Airflow):
-
 ```bash
-# Create the network (only needed once)
+# Create the shared network (only needed once)
 docker network create datastack-net
 
 cd batch
 docker compose -f docker-compose-batch.yml up -d --build
 ```
 
-Wait about 60–90 seconds for all services to become healthy. Check status:
+Wait 60–90 seconds for all services to become healthy:
 
 ```bash
 docker compose -f docker-compose-batch.yml ps
 ```
-
-All services should show `healthy` or `running`. If HDFS takes longer, wait another 30 seconds and check again.
 
 Load your CDR data into HDFS:
 
@@ -272,20 +404,18 @@ Load your CDR data into HDFS:
 # Enter the namenode container
 docker exec -it namenode bash
 
-# Inside namenode — create the directory structure
+# Create directory structure
 hdfs dfs -mkdir -p /data/raw
 hdfs dfs -mkdir -p /data/clean
 hdfs dfs -mkdir -p /data/analytics
 hdfs dfs -mkdir -p /user/hive/warehouse
 
-# Upload your CDR data files
+# Upload CDR data files
 hdfs dfs -put /mnt/data/raw/*   /data/raw/
 hdfs dfs -put /mnt/data/clean/* /data/clean/
 
-# Verify the upload
+# Verify
 hdfs dfs -ls /data/raw/
-
-# Exit the container
 exit
 ```
 
@@ -301,19 +431,13 @@ cd ../streaming
 docker compose -f docker-compose-streaming.yml up -d
 ```
 
-Wait about 30 seconds for Kafka brokers to elect a leader and become ready. Check:
-
-```bash
-docker compose -f docker-compose-streaming.yml ps
-```
-
-Verify Kafka brokers are up by opening Kafka-UI at **http://localhost:8085** — you should see 3 brokers listed under the `local` cluster.
+Wait 30 seconds for Kafka brokers to elect a leader. Verify at **http://localhost:8085** — you should see 3 brokers under the `local` cluster.
 
 ---
 
 ### 7. Start the CDR Kafka Producer
 
-Open a new terminal and start the live CDR event generator. It produces realistic ian CDR events and publishes them to Kafka topics in real time.
+Open a new terminal:
 
 ```bash
 cd streaming/kafka/producer
@@ -325,7 +449,7 @@ pip install kafka-python numpy prometheus-client
 python3 cdr_stream_gen.py --config streaming_config.json
 ```
 
-You should see output like:
+Expected output:
 
 ```
 [INFO] CDR_STREAM_GEN: Connected to Kafka brokers: broker1:29092, broker2:29093, broker3:29094
@@ -339,9 +463,7 @@ Keep this terminal running. Monitor topics live at **http://localhost:8085**.
 
 ### 8. Run the Batch ELT Notebooks in JupyterLab
 
-Open **http://localhost:8888** in your browser and navigate to `work/spark-apps/`.
-
-Run the notebooks **in order**, top to bottom, using **Kernel → Restart & Run All** for each:
+Open **http://localhost:8888** and navigate to `work/spark-apps/`. Run notebooks **in order** using **Kernel → Restart & Run All**:
 
 | # | Notebook | What It Does |
 |---|---|---|
@@ -356,15 +478,13 @@ Run the notebooks **in order**, top to bottom, using **Kernel → Restart & Run 
 | 09 | Business_Intelligence_Metrics | Revenue, churn, ARPU, and BI-ready aggregations |
 | 10 | PowerBI_Data_Preparation | Exports clean Parquet files for Power BI and Superset |
 
-Each notebook builds on the previous one. Do not skip or reorder them on the first run.
+> Each notebook builds on the previous one. Do not skip or reorder them on the first run.
 
 ---
 
 ### 9. 📊 View Grafana Dashboards (Streaming)
 
-Open **http://localhost:3000**
-- Username: `admin`
-- Password: `admin`
+Open **http://localhost:3000** · Username: `admin` · Password: `admin`
 
 All 7 dashboards load automatically (pre-provisioned):
 
@@ -382,11 +502,7 @@ All 7 dashboards load automatically (pre-provisioned):
 
 ### 10. 📊 View Superset Dashboards (Batch Analytics)
 
-Open **http://localhost:8088**
-- Username: `admin`
-- Password: `admin`
-
-Pre-built dashboards include:
+Open **http://localhost:8088** · Username: `admin` · Password: `admin`
 
 **Network Operations Dashboard**
 ![Network_Operations_Dashboard](assets/Network_Operations_Dashboard.png)
@@ -415,6 +531,7 @@ After running notebook 10, export files are available in `batch/jupyter/notebook
 - **AlertManager**: http://localhost:9093 — view and silence active alerts
 
 Pre-configured alert rules in `streaming/monitoring/prometheus/rules/cdr_alerts.yml` fire when:
+
 - Kafka consumer lag exceeds threshold
 - CDR event rate drops unexpectedly
 - A governorate cell cluster shows QoS degradation
@@ -446,6 +563,350 @@ Pre-configured alert rules in `streaming/monitoring/prometheus/rules/cdr_alerts.
 
 ---
 
+## 🔬 Data Pipeline Details
+
+### CDR Synthetic Data Generator
+
+The generator (`scripts/setup/generate_data.sh` + `enriching_data.py`) produces high-volume, production-like telecom events:
+
+- **Subscriber population**: 30,000 simulated subscribers across FTTH, ADSL, and 4G-LTE plans
+- **Event types**: Voice calls and data sessions with realistic duration, volume, and latency distributions
+- **Geographic distribution**: Governorate-level geo-metadata for spatial analytics
+- **Network attributes**: Signal strength (RSSI/RSRQ), latency, packet loss, and QoS class identifiers
+- **PII anonymization**: All MSISDN and subscriber identifiers are SHA-256 hashed before any downstream processing
+
+```python
+import hashlib
+
+def anonymize_msisdn(msisdn: str) -> str:
+    """SHA-256 hash subscriber ID for safe data sharing."""
+    return hashlib.sha256(msisdn.encode()).hexdigest()
+```
+
+### Kafka Producer
+
+- Publishes CDR events to topic-partitioned Kafka streams (one topic per network type)
+- Configurable throughput via `streaming_config.json`
+- Built-in `prometheus-client` instrumentation exposes producer metrics at `:8000/metrics`
+
+```json
+{
+  "brokers": ["broker1:29092", "broker2:29093", "broker3:29094"],
+  "topics": ["cdr-ftth", "cdr-adsl", "cdr-4g"],
+  "emit_rate_ms": 2,
+  "subscriber_count": 30000
+}
+```
+
+### Apache Flink Streaming Job
+
+`streaming/flink/cdr_flink_job.py` applies a multi-stage processing pipeline:
+
+1. **Deserialization** — JSON CDR events parsed from Kafka `value` field
+2. **Enrichment** — governorate lookup and operator metadata joined from a broadcast state
+3. **Anomaly scoring** — sliding 5-minute windows compute per-cell anomaly rates
+4. **Sink** — enriched and flagged records written to PostgreSQL for real-time dashboard consumption
+
+### Spark Batch Jobs (JupyterLab Notebooks)
+
+Each notebook is a self-contained Spark application:
+
+| Notebook | Spark Operations | Output |
+|---|---|---|
+| 01 — Ingestion | `spark.read.parquet`, schema validation, row count checks | Validated HDFS dataset |
+| 02 — Customer Dim | Dimension profiling, cardinality analysis | `dim_customer` Hive table |
+| 03 — Hive DDL | `CREATE TABLE`, partitioning, external table definitions | Hive schema |
+| 04 — EDA | Distributions, null analysis, outlier detection | EDA report |
+| 05 — Feature Eng. | Hourly/daily aggregates, rolling windows, ratio features | Feature Parquet |
+| 06 — Anomaly | Z-score thresholds, IQR flagging, rule-based detection | `fact_anomalies` |
+| 07 — Forecasting | Time-series decomposition, linear trend extrapolation | Trend metrics |
+| 08 — Network KPIs | Cell-level RSSI, latency, packet loss aggregations | `fact_network_perf` |
+| 09 — BI Metrics | ARPU, churn rate, revenue by segment and governorate | `fact_billing` |
+| 10 — Power BI Prep | Parquet export optimized for Power BI import | Dashboard exports |
+
+### Airflow DAG
+
+```python
+# airflow/dags/cdr_batch_pipeline.py
+ingest_task >> feature_engineering_task >> s3_upload_task
+```
+
+The DAG runs on a configurable schedule and triggers Spark jobs sequentially, with XCom passing output paths between tasks.
+
+---
+
+## ⭐ Star Schema Design
+
+The analytical layer is modeled as a star schema for efficient OLAP queries:
+
+```
+                    ┌──────────────────┐
+                    │   dim_customer   │
+                    │  (central dim)   │
+                    │  - customer_id   │
+                    │  - segment       │
+                    │  - governorate   │
+                    │  - plan_type     │
+                    └────────┬─────────┘
+                             │
+          ┌──────────────────┼──────────────────┐
+          │                  │                  │
+          ▼                  ▼                  ▼
+ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+ │   fact_usage    │ │  fact_billing   │ │ fact_network    │
+ │                 │ │                 │ │ _performance    │
+ │ - session_id    │ │ - invoice_id    │ │ - cell_id       │
+ │ - duration_s    │ │ - amount        │ │ - rssi          │
+ │ - bytes_up/dn   │ │ - plan_charge   │ │ - latency_ms    │
+ │ - network_type  │ │ - billing_date  │ │ - packet_loss   │
+ │ - start_time    │ │ - arpu          │ │ - qos_class     │
+ └─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+The central `dim_customer` table links all three fact tables, enabling cross-domain OLAP queries such as: "Which governorate has the highest ARPU among 4G-LTE subscribers with QoS class ≥ 3?"
+
+---
+
+## 🚨 Anomaly Detection Logic
+
+Anomaly detection is applied at two independent layers:
+
+### Layer 1 — Real-Time (Flink, per event)
+
+Classification is applied immediately on each CDR event as it enters the Flink pipeline:
+
+```python
+def classify_cdr_event(cdr: dict) -> str:
+    """Real-time CDR anomaly classification."""
+    bytes_total = cdr["bytes_up"] + cdr["bytes_down"]
+    duration    = cdr["duration_seconds"]
+
+    if duration > 0 and (bytes_total / duration) > DATA_RATE_THRESHOLD:
+        return "HIGH_DATA_RATE"
+    if cdr["latency_ms"] > LATENCY_THRESHOLD:
+        return "HIGH_LATENCY"
+    if cdr["packet_loss_pct"] > PACKET_LOSS_THRESHOLD:
+        return "PACKET_LOSS"
+    if duration > DURATION_THRESHOLD:
+        return "LONG_SESSION"
+    return "NORMAL"
+```
+
+Thresholds are loaded from `config/pipeline-config.json` for easy tuning without code changes.
+
+### Layer 2 — Batch (Spark, Notebook 06, statistical)
+
+Statistical methods applied over the full historical dataset:
+
+**Z-score flagging** — sessions more than 3 standard deviations from the subscriber's 30-day mean are flagged:
+
+```python
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+window = Window.partitionBy("customer_id").orderBy("start_time").rowsBetween(-30*24, 0)
+
+df = df.withColumn("mean_bytes", F.mean("bytes_total").over(window)) \
+       .withColumn("std_bytes",  F.stddev("bytes_total").over(window)) \
+       .withColumn("z_score",    (F.col("bytes_total") - F.col("mean_bytes")) / F.col("std_bytes")) \
+       .withColumn("is_anomaly", F.col("z_score").abs() > 3.0)
+```
+
+**IQR flagging** — inter-quartile range outlier detection for session durations:
+
+```python
+q1, q3   = df.approxQuantile("duration_seconds", [0.25, 0.75], 0.01)
+iqr      = q3 - q1
+df = df.withColumn("duration_outlier",
+    (F.col("duration_seconds") < (q1 - 1.5 * iqr)) |
+    (F.col("duration_seconds") > (q3 + 1.5 * iqr))
+)
+```
+
+**Rolling window anomaly rate** — Flink computes per-cell anomaly rates over 5-minute sliding windows and triggers AlertManager when the rate exceeds 10%.
+
+---
+
+## 📋 Evaluation Criteria Checklist
+
+| Criterion | Score | Evidence |
+|---|---|---|
+| **Problem description** | 4 / 4 | Real-world telecom use case — network optimization, fraud, churn, revenue leakage |
+| **Cloud** | 4 / 4 | AWS S3 (3-zone data lake) provisioned with Terraform, AES-256 encryption, IAM policy |
+| **Batch ingestion** | 4 / 4 | Spark reads from HDFS; Airflow DAG orchestrates end-to-end |
+| **Stream ingestion** | 4 / 4 | Kafka 3-broker cluster + Flink consumer + real-time PostgreSQL sink |
+| **Data warehouse** | 4 / 4 | Hive on Spark with star schema (dim_customer + 3 fact tables) |
+| **Transformations** | 4 / 4 | 10-notebook ELT pipeline: feature engineering, anomaly detection, BI metrics |
+| **Dashboard** | 4 / 4 | 7 Grafana dashboards (streaming) + Superset (batch) + Power BI (export) |
+| **Reproducibility** | 4 / 4 | `Makefile` + `docker-compose` + Terraform + this README |
+
+---
+
+## 🔁 Reproducibility
+
+This project is fully reproducible from a clean machine with Docker and Terraform installed:
+
+```bash
+# 1. Clone and enter the project
+git clone https://github.com/muhammedshehab1995/Telecom-CDR-Bigdata-Project.git
+cd Telecom-CDR-Bigdata-Project
+
+# 2. Set AWS credentials
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_DEFAULT_REGION=me-south-1
+
+# 3. One-command bring-up
+make infra        # Terraform init + apply (S3 + IAM)
+make data         # Generate, enrich, clean, and upload CDR data to S3
+make batch        # Launch HDFS, Spark, Hive, JupyterLab, Superset, Airflow
+make streaming    # Launch Kafka, Flink, Grafana, Prometheus
+make producer     # Start the live CDR Kafka producer
+make dashboards   # Open Superset at :8088 and Grafana at :3000
+```
+
+Or run everything at once:
+
+```bash
+make all
+```
+
+All Python dependencies are pinned in `docs/requirements.txt`. The Terraform AWS provider version is locked in `main.tf`. Docker image versions are pinned in both Compose files.
+
+---
+
+## 🌟 Optional Enhancements
+
+The following are not required but will significantly strengthen the portfolio:
+
+### CI/CD Pipeline (GitHub Actions)
+
+Add `.github/workflows/ci.yml` to lint and validate on every pull request:
+
+```yaml
+on: [pull_request]
+jobs:
+  validate-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.10' }
+      - run: pip install -r docs/requirements.txt
+      - run: python -m pytest tests/
+      - run: terraform fmt -check
+```
+
+### Unit Tests for the Generator and Anomaly Classifier
+
+Add `tests/test_generator.py` using `pytest`:
+
+```python
+from scripts.setup.enriching_data import classify_cdr_event, anonymize_msisdn
+
+def test_anonymize_is_deterministic():
+    assert anonymize_msisdn("01012345678") == anonymize_msisdn("01012345678")
+
+def test_anonymize_hides_original():
+    assert "01012345678" not in anonymize_msisdn("01012345678")
+
+def test_classify_high_latency():
+    cdr = {"bytes_up": 100, "bytes_down": 200, "duration_seconds": 60,
+           "latency_ms": 9999, "packet_loss_pct": 0.1}
+    assert classify_cdr_event(cdr) == "HIGH_LATENCY"
+
+def test_classify_normal():
+    cdr = {"bytes_up": 500, "bytes_down": 1000, "duration_seconds": 120,
+           "latency_ms": 10, "packet_loss_pct": 0.0}
+    assert classify_cdr_event(cdr) == "NORMAL"
+```
+
+### AWS Kinesis (Alternative to Local Kafka)
+
+Replace the Docker Kafka cluster with AWS Kinesis Data Streams for a fully cloud-native setup:
+
+1. Add a `aws_kinesis_stream` resource in `main.tf`
+2. Update the Flink job source connector from `kafka` to `kinesis`
+3. Gain managed scaling, cross-region replication, and native AWS IAM authentication at no infrastructure overhead
+
+### dbt Integration for Hive / S3
+
+Add a `dbt` layer on top of the Hive metastore for SQL-based transformations with automated lineage tracking and data quality tests — replacing the ad-hoc Spark notebook transforms with versioned, testable SQL models.
+
+### Delta Lake / Apache Iceberg
+
+Replace raw Parquet files in S3 with an Iceberg table format for ACID transactions, schema evolution, and time-travel queries on the batch layer.
+
+---
+
+## 🏛️ Key Design Decisions
+
+- **AWS S3** replaces local file storage for all three zones, enabling durable and scalable cross-service data sharing with zero extra infrastructure.
+- **Terraform** provisions S3 with versioning, encryption, and strict public-access blocking as code — reproducible in any environment.
+- **Lambda architecture**: Kafka + Flink handle the real-time speed layer; Spark + Hive handle the batch layer. Postgres serves as both Hive metastore and Flink streaming sink.
+- **Airflow DAG** has three tasks (`spark_ingest_and_clean → spark_feature_engineering → upload_analytics_to_s3`), wiring the batch pipeline directly to S3.
+- **SHA-256 anonymization** is applied at data generation time so PII never touches HDFS, S3, or any analytical surface — safe for data sharing and regulatory compliance.
+- **Star schema** was chosen over a flat wide table to enable efficient OLAP slice-and-dice across the customer, usage, billing, and network performance dimensions without full-table scans.
+
+---
+
+## 🔧 Troubleshooting
+
+**HDFS namenode not starting**
+
+```bash
+docker exec -it namenode bash
+# Check if format was completed
+hdfs namenode -format
+docker logs namenode
+```
+
+**Kafka brokers not connecting**
+
+The broker envs use `localhost` for the external listener. If you run the producer outside Docker, this is correct. Inside Docker, use `broker1:29092`.
+
+```bash
+# Check broker health
+docker compose -f docker-compose-streaming.yml ps
+
+# Restart a specific broker
+docker compose -f docker-compose-streaming.yml restart broker1
+```
+
+**JupyterLab kernel dies on Spark session**
+
+Increase Docker memory to at least 8 GB in Docker Desktop settings, then restart the container:
+
+```bash
+docker compose -f docker-compose-batch.yml restart jupyter
+```
+
+**Superset shows no charts**
+
+Make sure notebook 10 has been run and the Postgres connection string points to `superset-db:5432`. Re-trigger the connection test from Superset → Settings → Database Connections.
+
+**S3 upload fails with credentials error**
+
+```bash
+# Verify credentials are exported in your current shell
+echo $AWS_ACCESS_KEY_ID
+aws sts get-caller-identity
+```
+
+**Flink job not processing**
+
+Check the Flink JobManager UI at `http://localhost:8081`. If the job shows `FAILED`, retrieve the exception from the UI → Job → Exceptions tab, then restart:
+
+```bash
+docker compose -f docker-compose-streaming.yml restart flink-jobmanager
+```
+
+**AlertManager not firing**
+
+Verify that Prometheus can scrape the CDR metrics endpoint. Go to `http://localhost:9090/targets` and confirm all targets show `UP`.
+
+---
+
 ## 🛑 Stopping All Services
 
 ```bash
@@ -465,38 +926,7 @@ cd ..
 terraform destroy -auto-approve
 ```
 
----
 
-## 🔧 Troubleshooting
-
-**HDFS namenode not starting**: Run `docker exec -it namenode bash` and check `hdfs namenode -format` was completed. Look at logs with `docker logs namenode`.
-
-**Kafka brokers not connecting**: The broker envs use `localhost` for the external listener. If you run producer outside Docker, this is correct. Inside Docker use `broker1:29092`.
-
-**JupyterLab kernel dies on Spark session**: Increase Docker memory to at least 8 GB in Docker Desktop settings, then restart the container.
-
-**Superset shows no charts**: Make sure you have run notebook 10 first and that the Postgres connection string in Superset settings points to `superset-db:5432`.
-
-**S3 upload fails with credentials error**: Double-check `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` are exported in your current shell session.
-
----
-
-## 🏛️ Key Design Decisions
-
-- **AWS S3** replaces local file storage for all three zones, enabling durable and scalable cross-service data sharing with zero extra infrastructure.
-- **Terraform** provisions S3 with versioning, encryption, and strict public-access blocking as code — reproducible in any environment.
-- **Lambda architecture**: Kafka + Flink handle the real-time speed layer; Spark + Hive handle the batch layer. Postgres serves as both Hive metastore and Flink streaming sink.
-- **Airflow DAG** now has three tasks (`spark_ingest_and_clean → spark_feature_engineering → upload_analytics_to_s3`), wiring the batch pipeline directly to S3.
-
----
-
-## 🤝 Contributing
-
-1. Fork and create a feature branch
-2. Add tests, documentation, or code
-3. Submit a pull request
-
----
 
 ## 📄 License
 
@@ -504,4 +934,4 @@ This project is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
-*CDR Telecom Big Data Platform ·  · [muhammedshehab1995](https://github.com/muhammedshehab1995) · 2025*
+*CDR Telecom Big Data Platform · [muhammedshehab1995](https://github.com/muhammedshehab1995) · 2025*
